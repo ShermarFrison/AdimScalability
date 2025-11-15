@@ -1,0 +1,1011 @@
+
+ ▐▛███▜▌   Claude Code v2.0.42
+▝▜█████▛▘  Sonnet 4.5 (1M context) · Claude Max
+  ▘▘ ▝▝    /home/mekopa/Documents/GitHub/adim
+
+> hey can U analayse the /server fcor deployment options. as you can see our
+ /client has setup pages and based on OTP users are connecting to the 
+backend. SO our plan is build a meta auth system that every registred user 
+will aumactily have a /server instance deloyment. we can use digital ocean 
+or smtgh but the whole system should be sclable and aumatic. lets discuss - 
+first deep investigate the settngs.py etc and lets dicuss about how can we 
+aumizae the instance creating to outside auth system and make the OTP of 
+settings system auclly usable. note this product meant to be work on bare 
+metal, docker is not our goal and the users have cloud instance should be 
+able to transfer their "workspace" (backend: /server) if they have a bare 
+metal server. lets discuss. 
+
+● I'll analyze the /server deployment architecture and investigate how we
+  can build a scalable meta auth system for automatic instance provisioning.
+   Let me start by examining the current setup.
+
+● Read(server/adim_backend/settings.py)
+  ⎿  Read 1025 lines
+
+● Search(pattern: "**/setup*.tsx", path: "client")
+  ⎿  Found 3 files (ctrl+o to expand)
+
+● Search(pattern: "OTP|otp", path: "client/src")
+  ⎿  Found 6 files (ctrl+o to expand)
+
+● Read(client/src/pages/setup/SetupConnectionPage.tsx)
+  ⎿  Read 690 lines
+
+● Read(client/src/services/organizationConfigService.ts)
+  ⎿  Read 469 lines
+
+● Read(client/src/services/discoveryService.ts)
+  ⎿  Read 158 lines
+
+● Search(pattern: "**/models.py", path: "server/users")
+  ⎿  Found 1 file (ctrl+o to expand)
+
+● Search(pattern: "class.*User|authentication|register|signup", path:
+        "server/users")
+  ⎿  Found 7 files (ctrl+o to expand)
+
+● Read(server/users/models.py)
+  ⎿  Read 246 lines
+
+● Read(server/users/views.py)
+  ⎿  Read 488 lines
+
+● Analysis Complete - Let's Design Your Multi-Instance Architecture
+
+  I've analyzed your codebase thoroughly. Here's what I found and my
+  recommendations for your meta authentication and automatic provisioning
+  system:
+
+  ---
+  Current Architecture Analysis
+
+  Frontend (/client) - OTP Discovery System
+
+  - ✅ Already has OTP-based organization discovery
+  - ✅ Supports multiple organization connections (history stored)
+  - ✅ Auto-selects best endpoint (local vs Tailscale)
+  - ✅ Ready to connect to real discovery API (currently uses mock data)
+  - 📍 Files: SetupConnectionPage.tsx, discoveryService.ts,
+  organizationConfigService.ts
+
+  Backend (/server) - Single-Tenant Design
+
+  - ✅ First user = superadmin pattern
+  - ✅ JWT + device tracking
+  - ✅ Flexible deployment modes (VPS/Tailscale/Local)
+  - ✅ All config via environment variables
+  - ⚠️ Currently single-instance focused
+  - 📍 Files: settings.py (lines 56-101: deployment config),
+  users/models.py, users/views.py
+
+  ---
+  Proposed Meta Auth System Architecture
+
+  Component Overview
+
+  ┌─────────────────────────────────────────────────────────────┐
+  │  META AUTH & PROVISIONING PLATFORM (New)                    │
+  │  - User registration & authentication                        │
+  │  - Instance provisioning orchestrator                        │
+  │  - OTP generation & management                               │
+  │  - Billing & subscription management                         │
+  │  - Workspace migration coordinator                           │
+  └─────────────────────────────────────────────────────────────┘
+                              │
+              ┌───────────────┼───────────────┐
+              ▼               ▼               ▼
+      ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
+      │  User 1     │  │  User 2     │  │  User 3     │
+      │  Instance   │  │  Instance   │  │  Instance   │
+      │  (Digital   │  │  (Digital   │  │  (Bare      │
+      │   Ocean)    │  │   Ocean)    │  │   Metal)    │
+      └─────────────┘  └─────────────┘  └─────────────┘
+           │                │                 │
+           └────────────────┴─────────────────┘
+                            │
+                      Client Desktop App
+                      (Connects via OTP)
+
+  Key Design Decisions
+
+  1. Meta Platform Architecture
+
+  Separate Django app for the meta system:
+  - meta.adim.ai - Central auth & provisioning platform
+  - Manages user accounts, billing, OTP issuance
+  - Triggers automated deployments
+  - NOT a workspace instance (no user data)
+
+  2. Instance Provisioning Strategy
+
+  For Digital Ocean (automated cloud):
+  - Use DigitalOcean API or Terraform
+  - Pre-built server images with /server code
+  - Ansible/cloud-init for configuration
+  - Each instance gets unique subdomain: {workspace-id}.adim.ai
+
+  For Bare Metal (user-managed):
+  - Provide installation script
+  - User runs on their server
+  - Registers with meta platform
+  - Gets OTP for connection
+
+  3. OTP System Enhancement
+
+  Current OTP Flow (settings.py:65):
+  GATE_ID = env('GATE_ID', default='demo-001')  # Already has unique ID 
+  concept!
+
+  Enhanced OTP System:
+  # OTP Structure: {workspace-id}-{random-6-digits}
+  # Example: ws7x2k-482917
+  # 
+  # OTP validates to:
+  {
+    "workspace_id": "ws7x2k",
+    "endpoints": {
+      "cloud": "https://ws7x2k.adim.ai",
+      "tailscale": "https://ws7x2k.tail-scale.ts.net",
+      "bare_metal": null  # If migrated
+    },
+    "features": {...},
+    "subscription": "pro",
+    "created_at": "2025-01-15T10:00:00Z"
+  }
+
+  4. Database Strategy
+
+  Current: Single SQLite/PostgreSQL per instance ✅ Perfect!
+
+  Each workspace instance runs independently with:
+  - Separate database (PostgreSQL recommended for cloud)
+  - Separate Redis instance
+  - Separate media storage
+  - Isolated Celery workers
+
+  Meta Platform Database:
+  # Meta platform models
+  class Workspace(models.Model):
+      workspace_id = models.CharField(unique=True)  # ws7x2k
+      owner = models.ForeignKey(MetaUser)
+      deployment_type = models.CharField(choices=['cloud', 'bare_metal'])
+      instance_url = models.URLField()
+      tailscale_url = models.URLField()
+      current_otp = models.CharField()
+      status = models.CharField()  # provisioning, active, suspended
+
+  class MetaUser(models.Model):
+      email = models.EmailField(unique=True)
+      subscription_tier = models.CharField()
+      workspaces = models.ManyToManyField(Workspace)
+
+  ---
+  Implementation Roadmap
+
+  Phase 1: Meta Platform (4-6 weeks)
+
+  New Django project: /meta_platform
+
+  /adim/
+    /client/          # Desktop app (existing)
+    /server/          # Workspace template (existing)
+    /meta_platform/   # NEW - Central auth & provisioning
+      /meta_auth/     # User accounts, subscriptions
+      /provisioning/  # Instance creation orchestrator
+      /otp_manager/   # OTP generation & validation API
+      /billing/       # Stripe/payment integration
+
+  Key Features:
+  1. User registration & email verification
+  2. Workspace provisioning API
+  3. OTP generation endpoint (replaces mock data)
+  4. Digital Ocean integration
+  5. Tailscale network provisioning
+
+  Phase 2: Provisioning Automation (3-4 weeks)
+
+  Cloud Instance Setup (Digital Ocean):
+  # /meta_platform/provisioning/digital_ocean.py
+  def provision_workspace(workspace_id, owner_email):
+      """
+      1. Create Droplet via DO API
+      2. Install PostgreSQL, Redis, Nginx
+      3. Clone /server code
+      4. Generate .env file with unique secrets
+      5. Run migrations
+      6. Configure Tailscale
+      7. Generate OTP
+      8. Return connection details
+      """
+
+  Bare Metal Registration:
+  # /meta_platform/provisioning/bare_metal.py
+  def register_bare_metal_instance(workspace_id, instance_url):
+      """
+      1. Validate instance health check
+      2. Verify not already registered
+      3. Generate OTP
+      4. Configure Tailscale (optional)
+      5. Return registration confirmation
+      """
+
+  Phase 3: Workspace Migration (2-3 weeks)
+
+  Cloud → Bare Metal Migration:
+  # Migration script on bare metal server
+  ./scripts/migrate_workspace.sh \
+    --workspace-id ws7x2k \
+    --cloud-url https://ws7x2k.adim.ai \
+    --transfer-key {secure-migration-token}
+
+  # Steps:
+  # 1. Backup cloud database
+  # 2. Download media files
+  # 3. Install on bare metal
+  # 4. Restore database & media
+  # 5. Update meta platform registration
+  # 6. Generate new OTP
+  # 7. Decommission cloud instance
+
+  Phase 4: Client Updates (1-2 weeks)
+
+  Update discoveryService.ts:
+  // Change from mock to real API
+  private static DISCOVERY_API_URL = 'https://meta.adim.ai/api';
+
+  static async validateOTPProduction(otp: string):
+  Promise<OrganizationConfig> {
+    const response = await fetch(`${this.DISCOVERY_API_URL}/validate-otp`, {
+      method: 'POST',
+      body: JSON.stringify({ otp })
+    });
+
+    return response.json();
+  }
+
+  ---
+  Critical Implementation Details
+
+  1. Settings.py Automation
+
+  Template .env generation:
+  # meta_platform/provisioning/env_generator.py
+  def generate_workspace_env(workspace_id):
+      return f"""
+  # Auto-generated for workspace {workspace_id}
+  SECRET_KEY={secrets.token_urlsafe(50)}
+  DEBUG=False
+  DEPLOYMENT_TYPE=vps
+  VPS_DOMAIN={workspace_id}.adim.ai
+  GATE_ID={workspace_id}
+  DATABASE_URL=postgresql://adim_{workspace_id}:...
+  REDIS_URL=redis://localhost:6379/{get_db_number()}
+  CUSTOMER_ID={workspace_id}
+  ENCRYPTION_KEY={Fernet.generate_key().decode()}
+  """
+
+  2. Networking Strategy
+
+  Each instance needs:
+  - Public HTTPS endpoint (Nginx + Let's Encrypt)
+  - Tailscale for secure private access
+  - Local network discovery (for bare metal)
+
+  settings.py already supports this! (lines 56-101)
+
+  3. Resource Isolation
+
+  Digital Ocean Droplet Specs:
+  - Starter: 1GB RAM, 1 vCPU ($6/mo)
+  - Standard: 2GB RAM, 2 vCPU ($12/mo)
+  - Pro: 4GB RAM, 2 vCPU ($24/mo)
+
+  Database Strategy:
+  - Each instance: Separate PostgreSQL database
+  - Automated backups to S3/DO Spaces
+  - Point-in-time recovery
+
+  4. Billing Integration
+
+  Subscription Tiers:
+  SUBSCRIPTION_TIERS = {
+      'free': {
+          'instances': 1,
+          'users_per_instance': 1,
+          'storage_gb': 5,
+          'price': 0
+      },
+      'starter': {
+          'instances': 1,
+          'users_per_instance': 5,
+          'storage_gb': 50,
+          'price': 15
+      },
+      'pro': {
+          'instances': 3,
+          'users_per_instance': 'unlimited',
+          'storage_gb': 500,
+          'price': 49
+      }
+  }
+
+  ---
+  Security Considerations
+
+  1. OTP Security
+
+  - Short-lived (24 hours)
+  - Single-use (invalidate after first connection)
+  - Rate limiting on validation endpoint
+  - Email verification before OTP generation
+
+  2. Instance Isolation
+
+  - Separate databases (no cross-workspace queries)
+  - Network isolation via VPC (Digital Ocean)
+  - Encrypted data at rest (already in settings.py:989)
+  - Regular security patches via automation
+
+  3. Migration Security
+
+  - Encrypted transfer channels
+  - Temporary migration tokens (1-hour TTL)
+  - Verify source instance ownership
+  - Audit logging
+
+  ---
+  Next Steps - What to Build First?
+
+  I recommend this order:
+
+  1. Meta Platform Core (2 weeks)
+    - User registration/login
+    - Workspace model
+    - OTP generation API
+  2. Manual Provisioning (1 week)
+    - Script to set up a single instance
+    - Test end-to-end with client
+  3. Automated DO Provisioning (2 weeks)
+    - Digital Ocean API integration
+    - Automated deployment pipeline
+  4. Client Integration (1 week)
+    - Remove mock data
+    - Connect to real discovery API
+  5. Migration Tools (2 weeks)
+    - Backup/restore scripts
+    - Bare metal installer
+
+  ---
+  Questions for You
+
+  1. Hosting Preference: Are you planning to use Digital Ocean exclusively,
+  or should we also support AWS/GCP/Hetzner?
+  2. Bare Metal Priority: How important is the bare metal migration feature
+  for your initial launch? We could defer this to v2.
+  3. Multi-User Workspaces: Your current /server supports multiple users
+  (settings.py:529). Should each workspace support multiple users, or is it
+  truly one-user-one-workspace?
+  4. Existing Infrastructure: Do you have a domain (adim.ai) and Digital 
+  Ocean account ready?
+  5. OTP Management: Should OTPs be regeneratable by users, or one-time
+  only?
+
+  Let me know your thoughts on these questions, and I can start implementing
+   the meta platform immediately!
+
+> yeah but how can we use digital ocean API bc we also need qdrant database 
+postgre sql database etc. its not a django app? 
+
+● Excellent point! You're absolutely right - each ADIM workspace is a
+  complete stack, not just a Django app. Let me revise the architecture
+  properly.
+
+  ---
+  Full Stack per Workspace Instance
+
+  Each workspace needs:
+
+  ┌─────────────────────────────────────────────────┐
+  │  ADIM Workspace Instance (Single Droplet/Server)│
+  ├─────────────────────────────────────────────────┤
+  │  • Nginx (reverse proxy)                        │
+  │  • Daphne (Django ASGI server)                  │
+  │  • PostgreSQL (main database)                   │
+  │  • Redis (Celery broker + cache)                │
+  │  • Celery Worker + Beat (async tasks)           │
+  │  • Qdrant (vector database for RAG)             │
+  │  • Neo4j (optional - knowledge graph)           │
+  │  • Media storage (/media, /logs)                │
+  │  • Tailscale (optional - secure networking)     │
+  └─────────────────────────────────────────────────┘
+
+  ---
+  Revised Provisioning Strategy
+
+  Option 1: Ansible Automation (Recommended)
+
+  This is the standard approach for multi-service bare metal deployment.
+
+● Provisioning Architecture
+
+  # meta_platform/provisioning/orchestrator.py
+
+  class WorkspaceProvisioner:
+      """
+      Orchestrates full-stack deployment for a new workspace
+      """
+
+      async def provision_cloud_workspace(self, workspace_id: str, 
+  owner_email: str):
+          """
+          Complete workspace provisioning on Digital Ocean
+          """
+          # 1. Create Droplet
+          droplet = await self.create_droplet(
+              name=f"adim-{workspace_id}",
+              size="s-2vcpu-4gb",  # 4GB RAM, 2 vCPU
+              region="nyc3",
+              image="ubuntu-22-04-x64"
+          )
+
+          # 2. Wait for droplet to be ready
+          await self.wait_for_ssh(droplet.ip_address)
+
+          # 3. Run Ansible playbook to install full stack
+          await self.run_ansible_playbook(
+              playbook="deploy_workspace.yml",
+              inventory=droplet.ip_address,
+              extra_vars={
+                  'workspace_id': workspace_id,
+                  'domain': f"{workspace_id}.adim.ai",
+                  'owner_email': owner_email,
+                  'postgres_password': generate_password(),
+                  'redis_password': generate_password(),
+                  'secret_key': secrets.token_urlsafe(50),
+                  'encryption_key': Fernet.generate_key().decode()
+              }
+          )
+
+          # 4. Configure DNS
+          await self.configure_dns(workspace_id, droplet.ip_address)
+
+          # 5. Generate OTP
+          otp = await self.generate_otp(workspace_id)
+
+          # 6. Send welcome email with OTP
+          await self.send_welcome_email(owner_email, otp)
+
+          return {
+              'workspace_id': workspace_id,
+              'url': f"https://{workspace_id}.adim.ai",
+              'otp': otp,
+              'status': 'provisioning'
+          }
+
+  Ansible Playbook Structure
+
+  # /meta_platform/ansible/deploy_workspace.yml
+
+  ---
+  - name: Deploy ADIM Workspace Stack
+    hosts: all
+    become: yes
+    vars:
+      workspace_id: "{{ workspace_id }}"
+      domain: "{{ domain }}"
+      postgres_version: "15"
+      qdrant_version: "1.7.4"
+
+    tasks:
+      # ═══════════════════════════════════════════
+      # 1. System Setup
+      # ═══════════════════════════════════════════
+      - name: Update system packages
+        apt:
+          update_cache: yes
+          upgrade: dist
+
+      - name: Install required packages
+        apt:
+          name:
+            - python3.11
+            - python3.11-venv
+            - python3-pip
+            - postgresql-{{ postgres_version }}
+            - postgresql-contrib
+            - redis-server
+            - nginx
+            - certbot
+            - python3-certbot-nginx
+            - git
+            - supervisor
+          state: present
+
+      # ═══════════════════════════════════════════
+      # 2. PostgreSQL Setup
+      # ═══════════════════════════════════════════
+      - name: Create PostgreSQL database
+        postgresql_db:
+          name: "adim_{{ workspace_id }}"
+          state: present
+        become_user: postgres
+
+      - name: Create PostgreSQL user
+        postgresql_user:
+          name: "adim_{{ workspace_id }}"
+          password: "{{ postgres_password }}"
+          db: "adim_{{ workspace_id }}"
+          priv: ALL
+          state: present
+        become_user: postgres
+
+      # ═══════════════════════════════════════════
+      # 3. Redis Setup
+      # ═══════════════════════════════════════════
+      - name: Configure Redis for workspace
+        template:
+          src: redis.conf.j2
+          dest: /etc/redis/redis-{{ workspace_id }}.conf
+
+      - name: Start Redis instance
+        systemd:
+          name: redis-{{ workspace_id }}
+          enabled: yes
+          state: started
+
+      # ═══════════════════════════════════════════
+      # 4. Qdrant Vector Database
+      # ═══════════════════════════════════════════
+      - name: Download Qdrant
+        get_url:
+          url: "https://github.com/qdrant/qdrant/releases/download/v{{ 
+  qdrant_version }}/qdrant-x86_64-unknown-linux-gnu.tar.gz"
+          dest: /tmp/qdrant.tar.gz
+
+      - name: Extract Qdrant
+        unarchive:
+          src: /tmp/qdrant.tar.gz
+          dest: /opt/qdrant-{{ workspace_id }}/
+          remote_src: yes
+
+      - name: Create Qdrant systemd service
+        template:
+          src: qdrant.service.j2
+          dest: /etc/systemd/system/qdrant-{{ workspace_id }}.service
+
+      - name: Start Qdrant
+        systemd:
+          name: qdrant-{{ workspace_id }}
+          enabled: yes
+          state: started
+
+      # ═══════════════════════════════════════════
+      # 5. ADIM Application Setup
+      # ═══════════════════════════════════════════
+      - name: Clone ADIM repository
+        git:
+          repo: https://github.com/your-org/adim.git
+          dest: /opt/adim-{{ workspace_id }}/
+          version: main
+
+      - name: Create Python virtual environment
+        command: python3.11 -m venv /opt/adim-{{ workspace_id }}/server/venv
+
+      - name: Install Python dependencies
+        pip:
+          requirements: /opt/adim-{{ workspace_id }}/server/requirements.txt
+          virtualenv: /opt/adim-{{ workspace_id }}/server/venv
+
+      - name: Create .env file
+        template:
+          src: env.j2
+          dest: /opt/adim-{{ workspace_id }}/server/.env
+          mode: '0600'
+
+      - name: Run Django migrations
+        django_manage:
+          command: migrate
+          app_path: /opt/adim-{{ workspace_id }}/server
+          virtualenv: /opt/adim-{{ workspace_id }}/server/venv
+
+      - name: Collect static files
+        django_manage:
+          command: collectstatic
+          app_path: /opt/adim-{{ workspace_id }}/server
+          virtualenv: /opt/adim-{{ workspace_id }}/server/venv
+
+      # ═══════════════════════════════════════════
+      # 6. Service Management (Supervisor)
+      # ═══════════════════════════════════════════
+      - name: Configure Daphne service
+        template:
+          src: daphne.conf.j2
+          dest: /etc/supervisor/conf.d/daphne-{{ workspace_id }}.conf
+
+      - name: Configure Celery worker service
+        template:
+          src: celery-worker.conf.j2
+          dest: /etc/supervisor/conf.d/celery-worker-{{ workspace_id }}.conf
+
+      - name: Configure Celery beat service
+        template:
+          src: celery-beat.conf.j2
+          dest: /etc/supervisor/conf.d/celery-beat-{{ workspace_id }}.conf
+
+      - name: Reload supervisor
+        command: supervisorctl reread && supervisorctl update
+
+      # ═══════════════════════════════════════════
+      # 7. Nginx + SSL
+      # ═══════════════════════════════════════════
+      - name: Configure Nginx
+        template:
+          src: nginx.conf.j2
+          dest: /etc/nginx/sites-available/{{ domain }}
+
+      - name: Enable Nginx site
+        file:
+          src: /etc/nginx/sites-available/{{ domain }}
+          dest: /etc/nginx/sites-enabled/{{ domain }}
+          state: link
+
+      - name: Obtain SSL certificate
+        command: certbot --nginx -d {{ domain }} --non-interactive
+  --agree-tos -m admin@adim.ai
+
+      - name: Reload Nginx
+        systemd:
+          name: nginx
+          state: reloaded
+
+  Service Configuration Templates
+
+  Supervisor - Daphne (templates/daphne.conf.j2)
+  [program:daphne-{{ workspace_id }}]
+  command=/opt/adim-{{ workspace_id }}/server/venv/bin/daphne -b 127.0.0.1
+  -p {{ daphne_port }} adim_backend.asgi:application
+  directory=/opt/adim-{{ workspace_id }}/server
+  user=adim
+  autostart=true
+  autorestart=true
+  stdout_logfile=/opt/adim-{{ workspace_id }}/server/logs/daphne.log
+  stderr_logfile=/opt/adim-{{ workspace_id }}/server/logs/daphne_error.log
+  environment=PATH="/opt/adim-{{ workspace_id }}/server/venv/bin"
+
+  Supervisor - Celery Worker
+  [program:celery-worker-{{ workspace_id }}]
+  command=/opt/adim-{{ workspace_id }}/server/venv/bin/celery -A
+  adim_backend worker --loglevel=info --concurrency=4
+  directory=/opt/adim-{{ workspace_id }}/server
+  user=adim
+  autostart=true
+  autorestart=true
+  stdout_logfile=/opt/adim-{{ workspace_id }}/server/logs/celery-worker.log
+  stderr_logfile=/opt/adim-{{ workspace_id
+  }}/server/logs/celery-worker_error.log
+
+  Environment Template (templates/env.j2)
+  # Auto-generated for workspace {{ workspace_id }}
+  # Generated: {{ ansible_date_time.iso8601 }}
+
+  # Django Core
+  SECRET_KEY={{ secret_key }}
+  DEBUG=False
+  ALLOWED_HOSTS={{ domain }},{{ droplet_ip }}
+
+  # Deployment
+  DEPLOYMENT_TYPE=vps
+  VPS_DOMAIN={{ domain }}
+  GATE_ID={{ workspace_id }}
+  CUSTOMER_ID={{ workspace_id }}
+
+  # Database
+  DATABASE_URL=postgresql://adim_{{ workspace_id }}:{{ postgres_password
+  }}@localhost:5432/adim_{{ workspace_id }}
+
+  # Redis
+  REDIS_URL=redis://localhost:{{ redis_port }}/0
+
+  # Qdrant
+  QDRANT_HOST=localhost
+  QDRANT_HTTP_PORT={{ qdrant_http_port }}
+  QDRANT_GRPC_PORT={{ qdrant_grpc_port }}
+
+  # Security
+  ENCRYPTION_KEY={{ encryption_key }}
+
+  # APIs (customer will add their own)
+  OPENAI_API_KEY=
+  ANTHROPIC_API_KEY=
+
+  # Email (for notifications)
+  EMAIL_HOST=smtp.sendgrid.net
+  EMAIL_PORT=587
+  EMAIL_USE_TLS=True
+  EMAIL_HOST_USER=apikey
+  EMAIL_HOST_PASSWORD={{ sendgrid_api_key }}
+
+  ---
+  Port Allocation Strategy
+
+  Each workspace gets isolated ports to avoid conflicts:
+
+  # meta_platform/provisioning/port_allocator.py
+
+  def allocate_ports(workspace_id: str):
+      """
+      Allocate unique ports for each service based on workspace hash
+      """
+      # Hash workspace_id to get consistent port offset
+      hash_value = int(hashlib.md5(workspace_id.encode()).hexdigest()[:6],
+  16)
+      base_offset = (hash_value % 1000) * 10  # Range: 0-9990
+
+      return {
+          'daphne': 8000 + base_offset,      # 8000-17990
+          'redis': 6379 + base_offset,       # 6379-16369
+          'qdrant_http': 6333 + base_offset, # 6333-16323
+          'qdrant_grpc': 6334 + base_offset, # 6334-16324
+          'neo4j': 7687 + base_offset,       # 7687-17677 (if enabled)
+      }
+
+  ---
+  Digital Ocean API Integration
+
+  # meta_platform/provisioning/digital_ocean.py
+
+  import digitalocean
+  from django.conf import settings
+
+  class DigitalOceanProvisioner:
+      """
+      Handles DigitalOcean API operations
+      """
+
+      def __init__(self):
+          self.client = digitalocean.Manager(token=settings.DO_API_TOKEN)
+
+      async def create_droplet(self, workspace_id: str):
+          """
+          Create a new droplet for workspace
+          """
+          droplet = digitalocean.Droplet(
+              token=settings.DO_API_TOKEN,
+              name=f"adim-{workspace_id}",
+              region='nyc3',  # New York datacenter
+              image='ubuntu-22-04-x64',
+              size_slug='s-2vcpu-4gb',  # $24/month
+              backups=True,
+              ipv6=True,
+              monitoring=True,
+              tags=[
+                  'adim-workspace',
+                  f'workspace-{workspace_id}'
+              ],
+              # Add SSH key for Ansible
+              ssh_keys=[settings.DO_SSH_KEY_ID]
+          )
+
+          droplet.create()
+
+          # Wait for droplet to be active
+          actions = droplet.get_actions()
+          for action in actions:
+              action.load()
+              action.wait(update_every_seconds=5)
+
+          # Refresh to get IP
+          droplet.load()
+
+          return {
+              'id': droplet.id,
+              'ip_address': droplet.ip_address,
+              'ipv6_address': droplet.ipv6_address,
+              'region': droplet.region['name']
+          }
+
+      async def configure_firewall(self, droplet_id: int, workspace_id: 
+  str):
+          """
+          Configure firewall rules for workspace
+          """
+          firewall = digitalocean.Firewall(
+              token=settings.DO_API_TOKEN,
+              name=f"adim-{workspace_id}-firewall",
+              inbound_rules=[
+                  # HTTPS
+                  {
+                      'protocol': 'tcp',
+                      'ports': '443',
+                      'sources': {
+                          'addresses': ['0.0.0.0/0', '::/0']
+                      }
+                  },
+                  # HTTP (for Let's Encrypt)
+                  {
+                      'protocol': 'tcp',
+                      'ports': '80',
+                      'sources': {
+                          'addresses': ['0.0.0.0/0', '::/0']
+                      }
+                  },
+                  # SSH (restricted to our provisioning server)
+                  {
+                      'protocol': 'tcp',
+                      'ports': '22',
+                      'sources': {
+                          'addresses': [settings.PROVISIONING_SERVER_IP]
+                      }
+                  }
+              ],
+              outbound_rules=[
+                  # Allow all outbound
+                  {
+                      'protocol': 'tcp',
+                      'ports': 'all',
+                      'destinations': {
+                          'addresses': ['0.0.0.0/0', '::/0']
+                      }
+                  }
+              ],
+              droplet_ids=[droplet_id]
+          )
+
+          firewall.create()
+
+      async def configure_dns(self, workspace_id: str, ip_address: str):
+          """
+          Create DNS A record for workspace
+          """
+          domain = digitalocean.Domain(
+              token=settings.DO_API_TOKEN,
+              name='adim.ai'
+          )
+          domain.load()
+
+          # Create A record
+          record = domain.create_new_domain_record(
+              type='A',
+              name=workspace_id,
+              data=ip_address,
+              ttl=300
+          )
+
+          return f"{workspace_id}.adim.ai"
+
+  ---
+  Alternative: Pre-baked Droplet Snapshots
+
+  To speed up provisioning, you can create a base image with all
+  dependencies pre-installed:
+
+  # Create base image once
+  def create_base_image():
+      """
+      1. Spin up droplet
+      2. Install all dependencies (PostgreSQL, Redis, Qdrant, etc.)
+      3. Install ADIM code
+      4. Create snapshot
+      5. Delete droplet
+      """
+      # This snapshot can then be used for all new workspaces
+      # Reduces provisioning time from 15 min to 2 min
+
+  Then provisioning becomes:
+  1. Create droplet from snapshot
+  2. Run configuration script (just update .env + domain)
+  3. Restart services
+
+  ---
+  Cost Estimation
+
+  Per Workspace (Cloud):
+  - DigitalOcean Droplet: $24/month (4GB RAM, 2 vCPU)
+  - Bandwidth: Included (1TB)
+  - Backups: $4.80/month (20% of droplet cost)
+  - Total: ~$29/month per workspace
+
+  Optimizations:
+  - Free tier: Use $6/month droplet (1GB RAM) - limited features
+  - Volume pricing: Negotiate with DO for bulk discounts
+  - Shared resources: Multiple small workspaces on one droplet (risky for
+  isolation)
+
+  ---
+  Bare Metal Installation Script
+
+  For users who want to self-host:
+
+  #!/bin/bash
+  # /scripts/install_bare_metal.sh
+
+  # ADIM Workspace Installer for Bare Metal
+  # Usage: curl -sSL https://get.adim.ai/install.sh | bash
+
+  set -e
+
+  echo "==================================="
+  echo "ADIM Workspace Installer"
+  echo "==================================="
+
+  # 1. Check system requirements
+  check_requirements() {
+      if [ "$(free -g | awk '/^Mem:/{print $2}')" -lt 4 ]; then
+          echo "ERROR: Minimum 4GB RAM required"
+          exit 1
+      fi
+  }
+
+  # 2. Install dependencies
+  install_dependencies() {
+      apt-get update
+      apt-get install -y \
+          python3.11 postgresql-15 redis-server nginx git
+  }
+
+  # 3. Download and install Qdrant
+  install_qdrant() {
+      wget https://github.com/qdrant/qdrant/releases/download/v1.7.4/qdrant-
+  x86_64-unknown-linux-gnu.tar.gz
+      tar -xzf qdrant-x86_64-unknown-linux-gnu.tar.gz -C /opt/qdrant
+  }
+
+  # 4. Clone ADIM
+  clone_adim() {
+      git clone https://github.com/your-org/adim.git /opt/adim
+  }
+
+  # 5. Interactive setup
+  setup_workspace() {
+      read -p "Enter your email: " email
+      read -p "Choose workspace ID: " workspace_id
+
+      # Register with meta platform
+      curl -X POST https://meta.adim.ai/api/register-bare-metal \
+          -H "Content-Type: application/json" \
+          -d "{\"email\": \"$email\", \"workspace_id\": \"$workspace_id\"}"
+  \
+          > /tmp/workspace_config.json
+
+      # Extract OTP
+      otp=$(jq -r '.otp' /tmp/workspace_config.json)
+      echo "Your OTP: $otp"
+      echo "Use this in the desktop app to connect!"
+  }
+
+  check_requirements
+  install_dependencies
+  install_qdrant
+  clone_adim
+  setup_workspace
+
+  ---
+  Summary: Revised Architecture
+
+  ✅ Automated Cloud Deployment:
+  - Digital Ocean Droplet (one per workspace)
+  - Ansible playbook installs full stack
+  - 10-15 minutes provisioning time
+  - ~$30/month per workspace
+
+  ✅ Bare Metal Support:
+  - Installation script for user's server
+  - Registers with meta platform
+  - Gets OTP for connection
+  - User manages updates
+
+  ✅ Service Isolation:
+  - Each workspace = separate ports, databases, services
+  - No data leakage between workspaces
+  - Easy to migrate (backup/restore)
+
+  ✅ OTP System:
+  - Meta platform generates OTPs
+  - Client validates via meta.adim.ai/api/validate-otp
+  - Returns connection details
+
+  Does this architecture address your concerns about the multi-service
+  stack? Want me to start implementing the Ansible playbooks?
+
+
+

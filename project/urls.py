@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.http import JsonResponse
-from django.urls import path
+from django.urls import path, include
 
 
 def health(_request):
@@ -9,6 +9,9 @@ def health(_request):
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("", health, name="health"),
+    path("api/auth/", include("meta_auth.urls")),
+    path("api/", include("workspaces.urls")),
+    path("health/", health, name="health"),
+    path("", health, name="home"),
 ]
 

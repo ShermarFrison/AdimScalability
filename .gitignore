@@ -1,2 +1,3 @@
 .venv
 Keys/
+**/__pycache__
