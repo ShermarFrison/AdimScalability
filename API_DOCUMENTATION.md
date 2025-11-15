@@ -2,7 +2,7 @@
 
 ## Overview
 
-This is the **Meta Platform** for ADIM - the central authentication and workspace provisioning system. It manages user accounts, workspace instances, and OTP-based discovery.
+This is the **Meta Platform** for ADIM - the central authentication and workspace provisioning system. It manages user accounts, workspace instances, and OTP-based discovery. The API is implemented with FastAPI in `meta_platform/` and mirrors the endpoints described below.
 
 ## Architecture
 

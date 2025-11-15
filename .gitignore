@@ -1,3 +1,6 @@
 .venv
+.env
+workspace/.env
+meta_platform/.env
 Keys/
 **/__pycache__
