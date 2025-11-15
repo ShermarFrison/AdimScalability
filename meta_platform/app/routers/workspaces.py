@@ -3,13 +3,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from .. import models, schemas, serializers
 from ..database import get_db
 from ..security import get_current_user
+from ..provisioning.orchestrator import WorkspaceOrchestrator, ProvisioningError
 
 router = APIRouter(tags=["workspaces"])
 
@@ -61,6 +62,7 @@ def list_workspaces(
 )
 def create_workspace(
     payload: schemas.WorkspaceCreate,
+    background_tasks: BackgroundTasks,
     user: models.MetaUser = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -93,7 +95,34 @@ def create_workspace(
     db.add_all([otp, log])
     db.commit()
     db.refresh(workspace)
+
+    # Provision workspace in background
+    background_tasks.add_task(_provision_workspace_task, workspace.id)
+
     return serializers.serialize_workspace(workspace)
+
+
+def _provision_workspace_task(workspace_id: int):
+    """Background task to provision workspace."""
+    from ..database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        workspace = db.execute(
+            select(models.Workspace).where(models.Workspace.id == workspace_id)
+        ).scalar_one_or_none()
+
+        if not workspace:
+            return
+
+        orchestrator = WorkspaceOrchestrator(db)
+        try:
+            result = orchestrator.provision_workspace(workspace)
+            print(f"Workspace {workspace.workspace_id} provisioned: {result}")
+        except ProvisioningError as e:
+            print(f"Failed to provision workspace {workspace.workspace_id}: {e}")
+    finally:
+        db.close()
 
 
 @router.get("/workspaces/{workspace_id}/", response_model=schemas.WorkspaceOut)

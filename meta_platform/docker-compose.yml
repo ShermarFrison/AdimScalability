@@ -1,0 +1,46 @@
+version: "3.9"
+
+services:
+  meta_db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${META_POSTGRES_DB:-meta_platform}
+      POSTGRES_USER: ${META_POSTGRES_USER:-meta_platform}
+      POSTGRES_PASSWORD: ${META_POSTGRES_PASSWORD:?META_POSTGRES_PASSWORD is required}
+    volumes:
+      - meta_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+    networks:
+      - meta_internal
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  meta_platform:
+    build: .
+    init: true
+    environment:
+      META_PLATFORM_DATABASE_URL: postgresql+psycopg://${META_POSTGRES_USER:-meta_platform}:${META_POSTGRES_PASSWORD:?META_POSTGRES_PASSWORD is required}@meta_db:5432/${META_POSTGRES_DB:-meta_platform}
+    depends_on:
+      meta_db:
+        condition: service_healthy
+    ports:
+      - "9000:9000"
+    networks:
+      - meta_internal
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    restart: unless-stopped
+
+volumes:
+  meta_pgdata:
+
+networks:
+  meta_internal:
+    driver: bridge
