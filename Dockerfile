@@ -18,21 +18,21 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
     && pip install --no-cache-dir -r requirements.txt \
     && pip install --no-cache-dir \
-        gunicorn==21.2.0 \
         "psycopg[binary]==3.1.19" \
         django-redis==5.4.0 \
         qdrant-client==1.8.0 \
     && apt-get purge -y --auto-remove build-essential libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy application code and drop privileges for the runtime container.
+# Copy application code, configure runtime user, and entrypoint.
 COPY . .
 RUN addgroup --system app \
     && adduser --system --ingroup app app \
-    && chown -R app:app /app
+    && chown -R app:app /app \
+    && chmod +x /app/entrypoint.sh
 
 USER app
 
 EXPOSE 8000
 
-# Default command is set in docker-compose.yml
+ENTRYPOINT ["/app/entrypoint.sh"]

@@ -50,7 +50,11 @@ services:
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:6333/readyz | grep -q 'ready'"]
+      test:
+        - "CMD-SHELL"
+        - >-
+          wget -qO- --header "api-key: $$QDRANT__SERVICE__API_KEY"
+          http://localhost:6333/readyz | grep -q 'ready'
       interval: 5s
       timeout: 3s
       retries: 25
@@ -63,8 +67,6 @@ services:
   web:
     build: .
     init: true
-    command: >-
-      bash -lc "python manage.py migrate && gunicorn ${DJANGO_WSGI_MODULE:-project.wsgi:application} --bind 0.0.0.0:8000"
     environment:
       DJANGO_SETTINGS_MODULE: ${DJANGO_SETTINGS_MODULE:-project.settings}
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?DJANGO_SECRET_KEY is required}
@@ -77,6 +79,7 @@ services:
       QDRANT_HOST: qdrant
       QDRANT_PORT: "6333"
       QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
+      GUNICORN_BIND: 0.0.0.0:8000
     depends_on:
       db:
         condition: service_healthy

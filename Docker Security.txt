@@ -1,0 +1,55 @@
+● The Docker configuration has several security issues, ranging from critical to moderate:
+
+  Critical Issues:
+
+  1. Secrets Committed to Git 🚨
+    - The .env file containing passwords and API keys is committed to the repository
+    - .env is NOT in .gitignore (only .venv and Keys/ are ignored)
+    - Anyone with repository access can see all credentials
+    - Git history preserves these secrets even if you delete them now
+  2. Weak Default Credentials 🚨
+    - POSTGRES_PASSWORD=change-me
+    - REDIS_PASSWORD=change-this-too
+    - QDRANT_API_KEY=local-dev-only
+    - DJANGO_SECRET_KEY=django-insecure-dev-key
+    - If these are used in production, they're trivially guessable
+  3. Insecure Django Settings
+    - DEBUG=1 (should be 0 in production - exposes sensitive error info)
+    - ALLOWED_HOSTS=* (allows any host header - vulnerable to host header injection)
+
+  High Priority Issues:
+
+  4. Qdrant Using latest Tag
+    - Line 45: image: qdrant/qdrant:latest
+    - No version pinning = unpredictable updates and security patches
+    - Your commit message mentions "Using qdrant latest rather than a security patched one" - this is backwards!
+  5. Missing User Specifications
+    - Most containers don't specify user: directives
+    - Likely running as root inside containers (privilege escalation risk)
+  6. No Resource Limits
+    - No memory/CPU limits defined
+    - Vulnerable to resource exhaustion attacks
+
+  Medium Priority Issues:
+
+  7. Missing Read-Only Filesystems
+    - None of the containers use read_only: true
+    - Would limit attack surface if containers are compromised
+  8. PostgreSQL & Qdrant Not Using cap_drop
+    - Only web and redis drop all capabilities
+    - Inconsistent security posture
+
+  Good Security Practices Found:
+
+  ✓ security_opt: no-new-privileges:true on all services✓ cap_drop: ALL on web and redis✓ Internal network with internal: true✓ Only web port exposed to host✓ Health checks
+  configured✓ tmpfs for sensitive temporary data
+
+  Recommendation Priority:
+
+  1. Immediately remove .env from git and add it to .gitignore
+  2. Rotate all credentials (they're now considered compromised)
+  3. Pin Qdrant to a specific version
+  4. Set DEBUG=0 and proper ALLOWED_HOSTS for production
+  5. Add user: directives to run as non-root
+  6. Add resource limits
+  7. Consider using Docker secrets or external secret management
